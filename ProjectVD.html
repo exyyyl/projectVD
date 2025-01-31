@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Valorant Agents</title>
+  <style>
+    body {
+      font-family: sans-serif;
+      text-align: center;
+      padding: 20px;
+      background-color: #f5f5f5;
+    }
+    h1 {
+      margin-bottom: 20px;
+    }
+    /* Стили для табов */
+    #tabs {
+      margin-bottom: 20px;
+    }
+    .tab-button {
+      padding: 10px 15px;
+      margin: 0 5px;
+      font-size: 14px;
+      cursor: pointer;
+      border: none;
+      background-color: #ddd;
+      border-radius: 3px;
+    }
+    .tab-button.active {
+      background-color: #4285f4;
+      color: #fff;
+    }
+    select {
+      font-size: 16px;
+      padding: 5px 10px;
+      margin-bottom: 20px;
+    }
+    #agentImages img {
+      width: 200px;
+      margin: 10px;
+      border: 2px solid #ccc;
+      border-radius: 5px;
+    }
+    button {
+      font-size: 16px;
+      padding: 10px 20px;
+      cursor: pointer;
+      margin: 10px;
+    }
+  </style>
+  <!-- Подключаем JSZip -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.0/jszip.min.js"></script>
+</head>
+<body>
+  <h1>Valorant Agents</h1>
+  
+  <!-- Табы для выбора типа изображения -->
+  <div id="tabs">
+    <button class="tab-button active" data-tab="full">Полный рост</button>
+    <button class="tab-button" data-tab="killfeed">Иконка убийства</button>
+    <button class="tab-button" data-tab="mini">Мини-иконка агента</button>
+    <button class="tab-button" data-tab="abilities">Иконки абилок</button>
+    <button class="tab-button" data-tab="background">Задний фон</button>
+  </div>
+  
+  <!-- Комбобокс для выбора агента -->
+  <select id="agentsCombo">
+    <option value="">Выберите агента</option>
+  </select>
+  
+  <!-- Контейнер для отображения изображения(ий) агента -->
+  <div id="agentImages"></div>
+  
+  <!-- Кнопки для скачивания -->
+  <button id="downloadBtn" style="display: none;">Скачать изображение</button>
+  <button id="downloadAllBtn" style="display: none;">Скачать всех агентов (архив)</button>
+
+  <script>
+    // Глобальные переменные
+    let agentsData = [];
+    // Для индивидуального агента
+    let currentImageUrl = '';
+    let currentAgentName = '';
+    let currentAbilitiesUrls = []; // для таба "abilities"
+    // Текущий выбранный тип изображения – по умолчанию "full"
+    let currentTab = 'full';
+
+    // При загрузке страницы
+    window.onload = loadAgents;
+
+    // Инициализируем табы: назначаем обработчик на все кнопки табов
+    document.querySelectorAll('.tab-button').forEach(button => {
+      button.addEventListener('click', () => {
+        // Обновляем активный таб
+        document.querySelectorAll('.tab-button').forEach(btn => btn.classList.remove('active'));
+        button.classList.add('active');
+        currentTab = button.getAttribute('data-tab');
+        // Обновляем отображение для выбранного агента, если он уже выбран
+        displayAgentImage();
+      });
+    });
+
+    // Загрузка данных агентов
+    async function loadAgents() {
+      try {
+        const response = await fetch('https://valorant-api.com/v1/agents');
+        const data = await response.json();
+
+        // Фильтруем только играбельных агентов
+        agentsData = data.data.filter(agent => agent.isPlayableCharacter);
+
+        // Заполняем комбобокс
+        const combo = document.getElementById('agentsCombo');
+        agentsData.forEach(agent => {
+          const option = document.createElement('option');
+          option.value = agent.uuid;
+          option.textContent = agent.displayName;
+          combo.appendChild(option);
+        });
+
+        // Показываем кнопку для массового скачивания, если данные загружены
+        document.getElementById('downloadAllBtn').style.display = 'inline-block';
+
+        // Обработчик изменения выбора агента
+        combo.addEventListener('change', displayAgentImage);
+
+        // Обработчики кнопок скачивания
+        document.getElementById('downloadBtn').addEventListener('click', downloadImage);
+        document.getElementById('downloadAllBtn').addEventListener('click', downloadAllAgents);
+
+      } catch (error) {
+        console.error('Ошибка загрузки данных:', error);
+      }
+    }
+
+    // Функция отображения изображения (или изображений) для выбранного агента в зависимости от активного таба
+    function displayAgentImage() {
+      const combo = document.getElementById('agentsCombo');
+      const selectedId = combo.value;
+      const imagesContainer = document.getElementById('agentImages');
+      imagesContainer.innerHTML = ''; // очищаем контейнер
+
+      // Скрываем кнопку скачивания, если ничего не выбрано
+      document.getElementById('downloadBtn').style.display = 'none';
+
+      if (!selectedId) return;
+
+      const agent = agentsData.find(a => a.uuid === selectedId);
+      if (!agent) return;
+
+      currentAgentName = agent.displayName;
+
+      if (currentTab === 'full') {
+        currentImageUrl = agent.fullPortrait;
+        createAndAppendImage(currentImageUrl, currentAgentName, imagesContainer);
+        document.getElementById('downloadBtn').style.display = 'inline-block';
+      } else if (currentTab === 'killfeed') {
+        currentImageUrl = agent.killfeedPortrait;
+        createAndAppendImage(currentImageUrl, currentAgentName, imagesContainer);
+        document.getElementById('downloadBtn').style.display = 'inline-block';
+      } else if (currentTab === 'mini') {
+        // Если displayIconSmall отсутствует, можно использовать displayIcon
+        currentImageUrl = agent.displayIconSmall || agent.displayIcon;
+        createAndAppendImage(currentImageUrl, currentAgentName, imagesContainer);
+        document.getElementById('downloadBtn').style.display = 'inline-block';
+      } else if (currentTab === 'abilities') {
+        // Для абилок выводим все иконки способностей
+        currentAbilitiesUrls = [];
+        if (agent.abilities && agent.abilities.length) {
+          agent.abilities.forEach((ability, index) => {
+            if (ability.displayIcon) {
+              currentAbilitiesUrls.push(ability.displayIcon);
+              createAndAppendImage(ability.displayIcon, currentAgentName + '_ability_' + (index+1), imagesContainer);
+            }
+          });
+          // Если хотя бы одна иконка есть — показываем кнопку скачивания
+          if (currentAbilitiesUrls.length) {
+            document.getElementById('downloadBtn').style.display = 'inline-block';
+          }
+        }
+      } else if (currentTab === 'background') {
+        currentImageUrl = agent.background;
+        createAndAppendImage(currentImageUrl, currentAgentName + '_background', imagesContainer);
+        document.getElementById('downloadBtn').style.display = 'inline-block';
+      }
+    }
+
+    // Вспомогательная функция для создания <img> и добавления в контейнер
+    function createAndAppendImage(url, altText, container) {
+      if (!url) return;
+      const img = document.createElement('img');
+      img.src = url;
+      img.alt = altText;
+      container.appendChild(img);
+    }
+
+    // Функция скачивания изображения выбранного агента (или его абилок)
+    async function downloadImage() {
+      // Если для текущего таба единичное изображение, скачиваем его напрямую
+      if (currentTab !== 'abilities') {
+        if (!currentImageUrl) return;
+        try {
+          const response = await fetch(currentImageUrl);
+          const blob = await response.blob();
+          const url = window.URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          // Формируем имя файла
+          a.download = currentAgentName.replace(/\s+/g, '_') + '_' + currentTab + '.png';
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+          window.URL.revokeObjectURL(url);
+        } catch (error) {
+          console.error('Ошибка при скачивании изображения:', error);
+        }
+      } else {
+        // Для абилок — создаём архив с иконками
+        if (!currentAbilitiesUrls.length) return;
+        const zip = new JSZip();
+        const promises = currentAbilitiesUrls.map(async (url, index) => {
+          try {
+            const response = await fetch(url);
+            if (!response.ok) {
+              console.error(`Ошибка загрузки иконки для ${currentAgentName} ability ${index+1}`);
+              return;
+            }
+            const blob = await response.blob();
+            const fileName = currentAgentName.replace(/\s+/g, '_') + '_ability_' + (index+1) + '.png';
+            zip.file(fileName, blob);
+          } catch (error) {
+            console.error(`Ошибка при скачивании иконки для ${currentAgentName} ability ${index+1}:`, error);
+          }
+        });
+        await Promise.all(promises);
+        zip.generateAsync({ type: 'blob' })
+          .then(blob => {
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = currentAgentName.replace(/\s+/g, '_') + '_abilities.zip';
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            window.URL.revokeObjectURL(url);
+          })
+          .catch(error => {
+            console.error('Ошибка при создании архива с абилками:', error);
+          });
+      }
+    }
+
+    // Функция скачивания архива со всеми агентами в зависимости от активного таба
+    async function downloadAllAgents() {
+      if (!agentsData.length) return;
+      const zip = new JSZip();
+      document.getElementById('downloadAllBtn').textContent = 'Скачивание...';
+
+      // Массив промисов для загрузки изображений каждого агента
+      const promises = agentsData.map(async agent => {
+        if (currentTab === 'full' || currentTab === 'killfeed' || currentTab === 'mini' || currentTab === 'background') {
+          let imageUrl = '';
+          if (currentTab === 'full') imageUrl = agent.fullPortrait;
+          else if (currentTab === 'killfeed') imageUrl = agent.killfeedPortrait;
+          else if (currentTab === 'mini') imageUrl = agent.displayIconSmall || agent.displayIcon;
+          else if (currentTab === 'background') imageUrl = agent.background;
+          if (!imageUrl) return;
+          try {
+            const response = await fetch(imageUrl);
+            if (!response.ok) {
+              console.error(`Ошибка загрузки изображения для ${agent.displayName}`);
+              return;
+            }
+            const blob = await response.blob();
+            const fileName = agent.displayName.replace(/\s+/g, '_') + '_' + currentTab + '.png';
+            zip.file(fileName, blob);
+          } catch (error) {
+            console.error(`Ошибка при скачивании изображения для ${agent.displayName}:`, error);
+          }
+        } else if (currentTab === 'abilities') {
+          // Для абилок – создаём папку для каждого агента
+          if (agent.abilities && agent.abilities.length) {
+            const folder = zip.folder(agent.displayName.replace(/\s+/g, '_') + '_abilities');
+            const abilityPromises = agent.abilities.map(async (ability, index) => {
+              if (!ability.displayIcon) return;
+              try {
+                const response = await fetch(ability.displayIcon);
+                if (!response.ok) {
+                  console.error(`Ошибка загрузки иконки для ${agent.displayName} ability ${index+1}`);
+                  return;
+                }
+                const blob = await response.blob();
+                const fileName = 'ability_' + (index+1) + '.png';
+                folder.file(fileName, blob);
+              } catch (error) {
+                console.error(`Ошибка при скачивании иконки для ${agent.displayName} ability ${index+1}:`, error);
+              }
+            });
+            await Promise.all(abilityPromises);
+          }
+        }
+      });
+
+      await Promise.all(promises);
+
+      zip.generateAsync({ type: 'blob' })
+        .then(blob => {
+          const url = window.URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = 'valorant_agents_' + currentTab + '.zip';
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+          window.URL.revokeObjectURL(url);
+          document.getElementById('downloadAllBtn').textContent = 'Скачать всех агентов (архив)';
+        })
+        .catch(error => {
+          console.error('Ошибка при создании архива:', error);
+          document.getElementById('downloadAllBtn').textContent = 'Скачать всех агентов (архив)';
+        });
+    }
+  </script>
+</body>
+</html>
